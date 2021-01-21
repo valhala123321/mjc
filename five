@@ -1,0 +1,154 @@
+#include<opencv2/opencv.hpp>
+#include<opencv2/highgui/highgui.hpp>
+#include<opencv2/imgproc/imgproc.hpp>
+#include<iostream>
+#include<cmath>
+using namespace cv;
+using namespace std;
+
+#define DPI 220   //dpi
+#define F 17.1   //inch  43.5cm/2.54
+#define B_real_radius 1.6   //inch  4.2cm/2.54   1.6535
+#define S_real_radius 0.6   //inch  1.7cm/2.54   0.6692
+Mat mask, dst1, dst2,dst3, src ,src1,src2;   //设置二维点集变量
+Mat result;  //结果图像
+
+
+void Imshow(void)
+{
+    namedWindow("output", WINDOW_AUTOSIZE);       //创建窗口
+    namedWindow("output1", WINDOW_AUTOSIZE);       //创建窗口
+    src = imread("D:/CloudMusic/任务五.jpg");
+    result = imread("D:/CloudMusic/任务五.jpg");
+    resize(src, src, Size(src.cols / 2, src.rows / 2));  //裁剪图像
+    resize(result, result, Size(result.cols / 2, result.rows / 2));  //裁剪图像
+    //纯黑图
+    src.copyTo(dst1);
+    dst1.setTo(0);
+}
+
+Mat get_perspective_mat()
+{
+    Point2f src_points[] = {
+        Point2f(27, 378),  //A
+        Point2f(512, 375), //B
+        Point2f(100, 155),  //C
+        Point2f(557, 155) };  //D
+
+    Point2f dst_points[] = {
+        Point2f(27, 378),  //A
+        Point2f(512, 375),  //B
+        Point2f(31, 75),  //C~
+        Point2f(515, 81) };  //D~
+
+    Mat M = cv::getPerspectiveTransform(src_points, dst_points);
+
+    return M;
+
+}
+
+int main()
+{
+    Imshow();  //读入图像
+    double D;  //摄像头到物体的水平距离
+    double distance_radius; //图形的实际像素 （inch）
+     vector <Vec3f> circles;  //获得圆的点
+    
+     cvtColor(src, src, COLOR_BGR2GRAY);  //灰度化
+
+     GaussianBlur(src,src1, Size(3, 3),2,2);  //高斯滤波平滑去噪
+
+     HoughCircles(src1, circles, HOUGH_GRADIENT, 1.5, 35, 85, 40, 10, 40);  //霍夫圆变换找圆
+     
+     for (size_t i = 0; i < circles.size(); i++)    //依次在图中绘制出圆
+     {
+         //参数定义
+         Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
+         int radius = cvRound(circles[i][2]);
+         cout << center << endl;
+         cout << radius << endl;
+         //绘制圆心
+         circle(result, center, 3, Scalar(0, 255, 0), -1, 8, 0);
+         //绘制圆轮廓
+         circle(result, center, radius, Scalar(155, 50, 255), 2, 8, 0);
+        
+         if (i == 0||i==1)
+         {
+             //单目测距
+             distance_radius = (double)radius*2 / DPI;
+             D = (B_real_radius * F) / (distance_radius);
+             D = D /2.54; //inch换算CM
+             D = D * 0.854;  //比例系数
+             cout << D << endl; 
+
+             double  radius_1 = ((double)31 / 42 + (double)23 / 42) / 2 * 42;
+             cout << radius_1 << endl;
+             //俯视图打印
+             circle(dst1, center, radius_1, Scalar(155, 50, 255), 2, 8, 0);
+         }
+         else
+         {
+             //单目测距
+             distance_radius = (double)radius * 2 / DPI;
+             D = (S_real_radius * F) / (distance_radius);
+             D = D / 2.54; //inch换算CM
+             cout << D << endl;
+             double  radius_1 = 11.6;   //[(11/17 + 11/17 + 13/17)/3]*17
+             //俯视图打印
+             circle(dst1, center, radius_1, Scalar(155, 50, 255), 2, 8, 0);
+         }
+         putText(result, "S=32.64cm", Point(305, 296), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 0, 255), 2, 8, false);
+         putText(result, "S=43.99cm", Point(185, 199), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 0, 255), 2, 8, false);
+         putText(result, "S=34.17cm", Point(476, 299), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 0, 255), 2, 8, false);
+         putText(result, "S=40.39cm", Point(94, 269), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 0, 255), 2, 8, false);
+     }
+
+     threshold(src, dst2, 142, 255, 0);   //二值化
+     Mat element = getStructuringElement(MORPH_RECT, Size(3, 3));  //定义内核
+     morphologyEx(dst2, dst2, MORPH_ERODE, element, Point(1, 1), 1);  //腐蚀操作
+     vector<vector<Point>>contours;
+     vector<Vec4i> hierarchy;
+     findContours(dst2, contours, hierarchy, RETR_CCOMP, CHAIN_APPROX_SIMPLE);
+     for (size_t i = 0; i < contours.size(); i++)
+     {
+         RotatedRect s = minAreaRect(contours[i]);
+         if (s.boundingRect().area() > 400 && s.boundingRect().area() < 600)
+         {
+            
+             Point p;
+
+             p.x = s.boundingRect().tl().x + (s.boundingRect().width / 2.0);
+
+             p.y = s.boundingRect().tl().y + (s.boundingRect().height / 2.0);
+
+             int radius_2 = s.boundingRect().width / 2.0;
+
+             distance_radius = (double)radius_2 * 2 / DPI;
+             D = (S_real_radius * F) / (distance_radius);
+             D = D / 2.54; //inch换算CM
+             cout <<endl<<D << endl;
+             //绘制圆心
+             circle(result, p, 2, Scalar(0, 255, 0), -1, 8, 0);
+             //绘制圆轮廓
+             circle(result, p, radius_2, Scalar(155, 50, 255), 2, 8, 0);
+
+             double radius_2_1 = 11.6;
+
+             circle(dst1, p, radius_2_1, Scalar(155, 50, 255), 2, 8, 0);
+
+             putText(result, "S=40.39cm", p, FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 0, 255), 2, 8, false);
+             
+            
+         }
+        
+     }
+    
+     /*Mat M = get_perspective_mat();
+     warpPerspective(result, dst2, M, src.size(), INTER_LINEAR);*/
+     
+     imshow("output", result);  //输出目标图
+     imshow("output1", dst1); //输出目标图
+     waitKey(0);
+     
+	 return 0;
+}
